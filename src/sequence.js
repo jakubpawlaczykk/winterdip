@@ -1,8 +1,17 @@
 // Ładowanie klatek i rysowanie ich na canvasie.
+//
+// Klatki są trzymane jako skompresowane bloby. Gotowe do rysowania bitmapy
+// powstają w tle tylko dla okna wokół bieżącej pozycji: dekodowanie nie blokuje
+// głównego wątku, a pamięć nie rośnie do setek klatek po 8 MB.
 
-const CONCURRENCY = 6;
+const CONCURRENCY = 8;
 const PRIORITY_HEAD = 10; // pierwsze klatki, widoczne zaraz po wejściu
 const COARSE_STEP = 4; // rzadka siatka klatek: daje całą animację, zanim dojdzie reszta
+
+const WINDOW_AHEAD = 24; // ile klatek dekodować z wyprzedzeniem w kierunku scrolla
+const WINDOW_BEHIND = 8;
+const EVICT_MARGIN = 6;
+const MAX_DECODES = 4;
 
 // Portret/tablet: kadr jest mniejszy niż ekran, żeby kubek zmieścił się w całości.
 const MIN_VISIBLE_WIDTH = 0.56;
@@ -10,6 +19,8 @@ const MAX_FRAME_HEIGHT = 0.66;
 const FRAME_CENTER_Y = 0.58;
 const BACKDROP_X = 0.2;
 const BACKDROP_W = 0.12;
+const BACKDROP_DIM = 'rgba(42, 0, 5, 0.38)';
+const MIN_BLEND = 0.02;
 
 export class FrameSequence {
   constructor({ canvas, backdrop, variant, basePath, stackedQuery }) {
@@ -20,8 +31,12 @@ export class FrameSequence {
     this.variant = variant;
     this.basePath = basePath;
     this.stackedQuery = stackedQuery;
-    this.images = new Array(variant.count).fill(null);
+    this.blobs = new Array(variant.count).fill(null);
+    this.bitmaps = new Map();
+    this.pending = new Set();
     this.target = 0;
+    this.center = 0;
+    this.direction = 1;
     this.drawn = -1;
     this.queued = false;
   }
@@ -43,11 +58,10 @@ export class FrameSequence {
   }
 
   async loadOne(index, retry = true) {
-    const img = new Image();
-    img.src = this.url(index);
     try {
-      await img.decode();
-      this.images[index] = img;
+      const response = await fetch(this.url(index));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      this.blobs[index] = await response.blob();
     } catch {
       if (retry) await this.loadOne(index, false);
     }
@@ -63,18 +77,58 @@ export class FrameSequence {
         const index = order[next++];
         await this.loadOne(index);
         done++;
-        if (index === 0 || this.drawn === -1) this.requestDraw(true);
+        this.pump();
         onProgress(done, order.length, done >= this.coarseCount);
       }
     };
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
   }
 
-  // Najbliższa załadowana klatka, gdy docelowa jeszcze nie dotarła.
+  // Dekoduje klatki najbliższe pozycji i zwalnia te poza oknem.
+  pump() {
+    const ahead = this.direction > 0 ? WINDOW_AHEAD : WINDOW_BEHIND;
+    const behind = this.direction > 0 ? WINDOW_BEHIND : WINDOW_AHEAD;
+    const low = this.center - behind;
+    const high = this.center + ahead;
+
+    for (const [index, bitmap] of this.bitmaps) {
+      if (index < low - EVICT_MARGIN || index > high + EVICT_MARGIN) {
+        bitmap.close();
+        this.bitmaps.delete(index);
+      }
+    }
+
+    for (let d = 0; d <= Math.max(ahead, behind); d++) {
+      if (this.pending.size >= MAX_DECODES) return;
+      const forward = this.center + this.direction * d;
+      const backward = this.center - this.direction * d;
+      if (forward >= low && forward <= high) this.decode(forward);
+      if (backward >= low && backward <= high) this.decode(backward);
+    }
+  }
+
+  decode(index) {
+    const blob = this.blobs[index];
+    if (!blob || this.bitmaps.has(index) || this.pending.has(index)) return;
+    if (this.pending.size >= MAX_DECODES) return;
+    this.pending.add(index);
+    createImageBitmap(blob)
+      .then((bitmap) => {
+        this.bitmaps.set(index, bitmap);
+        if (index === this.center || index === this.center + 1) this.requestDraw(true);
+      })
+      .catch(() => {})
+      .finally(() => {
+        this.pending.delete(index);
+        this.pump();
+      });
+  }
+
+  // Najbliższa gotowa klatka, gdy docelowa jeszcze się dekoduje.
   nearest(index) {
-    for (let d = 0; d < this.images.length; d++) {
-      const img = this.images[index - d] ?? this.images[index + d];
-      if (img) return img;
+    for (let d = 0; d < this.variant.count; d++) {
+      const bitmap = this.bitmaps.get(index - d) ?? this.bitmaps.get(index + d);
+      if (bitmap) return bitmap;
     }
     return null;
   }
@@ -120,14 +174,19 @@ export class FrameSequence {
       h: cssH / scale,
     };
     this.stacked = stacked;
-    this.ctx.imageSmoothingQuality = 'high';
+    this.backdropIndex = -1;
     this.requestDraw(true);
   }
 
   setFrame(value) {
-    const index = Math.round(value);
-    if (index === this.target) return;
-    this.target = index;
+    if (value === this.target) return;
+    if (value !== this.target) this.direction = value > this.target ? 1 : -1;
+    this.target = value;
+    const center = Math.floor(value);
+    if (center !== this.center) {
+      this.center = center;
+      this.pump();
+    }
     this.requestDraw();
   }
 
@@ -141,17 +200,38 @@ export class FrameSequence {
     });
   }
 
+  // Pozycja jest ułamkowa: przenikanie dwóch sąsiednich klatek daje ruch
+  // przy każdym odświeżeniu ekranu, a nie tylko przy zmianie klatki.
   draw() {
     if (this.target === this.drawn || !this.source) return;
-    const img = this.nearest(this.target);
-    if (!img) return;
+    const index = Math.floor(this.target);
+    const blend = this.target - index;
+    const base = this.nearest(index);
+    if (!base) return;
+
     const { x, y, w, h } = this.source;
-    this.ctx.drawImage(img, x, y, w, h, 0, 0, this.canvas.width, this.canvas.height);
-    if (this.stacked) {
-      // Tło z pasa obok kubka, żeby w rozmyciu nie było widać jego zarysu.
-      const { width, height } = this.variant;
-      this.backdropCtx.drawImage(img, width * BACKDROP_X, 0, width * BACKDROP_W, height, 0, 0, 64, 36);
+    const { width: cw, height: ch } = this.canvas;
+    this.ctx.drawImage(base, x, y, w, h, 0, 0, cw, ch);
+
+    const next = blend > MIN_BLEND ? this.bitmaps.get(index + 1) : null;
+    if (next) {
+      this.ctx.globalAlpha = blend;
+      this.ctx.drawImage(next, x, y, w, h, 0, 0, cw, ch);
+      this.ctx.globalAlpha = 1;
     }
-    if (this.images[this.target]) this.drawn = this.target;
+
+    if (this.stacked && index !== this.backdropIndex) this.drawBackdrop(base, index);
+    if (this.bitmaps.has(index)) this.drawn = this.target;
+  }
+
+  // Tło z pasa obok kubka, żeby nie było widać jego zarysu. Rozmycie daje samo
+  // powiększenie małego canvasa, bez kosztownego filtra CSS na każdą klatkę.
+  drawBackdrop(bitmap, index) {
+    const { width, height } = this.variant;
+    const { width: bw, height: bh } = this.backdrop;
+    this.backdropCtx.drawImage(bitmap, width * BACKDROP_X, 0, width * BACKDROP_W, height, 0, 0, bw, bh);
+    this.backdropCtx.fillStyle = BACKDROP_DIM;
+    this.backdropCtx.fillRect(0, 0, bw, bh);
+    this.backdropIndex = index;
   }
 }

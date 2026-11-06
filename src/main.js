@@ -17,6 +17,7 @@ const LOADER_PATIENCE_MS = 8000; // później wpuszczamy, gdy jest już rzadka s
 const story = document.getElementById('story');
 const header = document.getElementById('header');
 const isSmall = window.matchMedia('(max-width: 820px)').matches;
+const isTouch = window.matchMedia('(pointer: coarse)').matches;
 const stackedQuery = window.matchMedia('(max-aspect-ratio: 3/2)');
 // ?motion=on wymusza animację przy testach na systemie z wyłączonymi animacjami.
 const forceMotion = new URLSearchParams(location.search).get('motion') === 'on';
@@ -72,7 +73,8 @@ function buildTimeline(sequence, duration) {
       pin: true,
       start: 'top top',
       end: () => `+=${(window.innerHeight * scrollVh) / 100}`,
-      scrub: 0.35,
+      // Kółko wygładza już Lenis. Dotyk przewija natywnie, więc tam lekki scrub.
+      scrub: isTouch ? 0.2 : true,
       anticipatePin: 1,
       invalidateOnRefresh: true,
     },
