@@ -8,7 +8,7 @@ export const meta = {
     'Ręcznie szkliwiony kubek z miejscem na podgrzewacz. Jeden płomień utrzymuje czekoladę w cieple przez cały świąteczny wieczór.',
   // Pełny adres strony bez końcowego ukośnika, np. https://winterdip.pl
   // Potrzebny, żeby obraz OG działał przy udostępnianiu linku.
-  siteUrl: '',
+  siteUrl: 'https://jakubpawlaczykk.github.io/winterdip',
 };
 
 export const links = {
