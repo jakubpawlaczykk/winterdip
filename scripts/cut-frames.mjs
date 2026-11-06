@@ -17,8 +17,8 @@ const OUT = join(ROOT, 'public', 'frames');
 
 // Zmień tutaj, jeśli trzeba wyważyć jakość względem wagi strony.
 const VARIANTS = {
-  desktop: { width: 1920, frames: 180, quality: 72 },
-  mobile: { width: 1080, frames: 120, quality: 62 },
+  desktop: { width: 1920, frames: 360, quality: 72 },
+  mobile: { width: 1080, frames: 240, quality: 62 },
 };
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
