@@ -3,7 +3,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Lenis from 'lenis';
 import 'lenis/dist/lenis.css';
 
-import { scroll, stages } from './content.js';
+import { motionPrompt, scroll, stages } from './content.js';
 import { startParticles } from './particles.js';
 import { renderPage } from './render.js';
 import { FrameSequence } from './sequence.js';
@@ -169,7 +169,17 @@ function startStatic(finalFrameUrl) {
   img.src = finalFrameUrl;
   img.alt = 'Kubek z gorącą czekoladą i zapalonym podgrzewaczem';
   img.className = 'story__still';
-  story.prepend(img);
+
+  // Wybór obowiązuje tylko dla tego adresu, przy kolejnej wizycie wraca ustawienie systemu.
+  const prompt = document.createElement('div');
+  prompt.className = 'motion-prompt';
+  prompt.innerHTML = `<p>${motionPrompt.text}</p>
+    <a class="button button--primary button--sm" href="?motion=on">${motionPrompt.button}</a>`;
+
+  const hero = document.createElement('div');
+  hero.className = 'story__hero';
+  hero.append(img, prompt);
+  story.prepend(hero);
   header.classList.remove('is-hidden');
   hideLoader();
 }

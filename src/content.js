@@ -68,6 +68,12 @@ export const stages = [
   },
 ];
 
+// Widoczne, gdy system ma wyłączone animacje i strona pokazuje statyczną klatkę.
+export const motionPrompt = {
+  text: 'Animacje są wyłączone w ustawieniach urządzenia.',
+  button: 'Włącz animację',
+};
+
 export const features = {
   heading: 'Mały płomień, dużo ciepła',
   items: [

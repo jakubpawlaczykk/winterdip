@@ -49,4 +49,4 @@ Wrzuć zawartość katalogu `dist/` na dowolny hosting statyczny. Ścieżki są 
 
 ## Testowanie
 
-Gdy system ma wyłączone animacje (`prefers-reduced-motion`), strona pokazuje statyczną klatkę finałową z tekstami. Dodaj `?motion=on` do adresu, żeby mimo to zobaczyć animację.
+Gdy system ma wyłączone animacje (`prefers-reduced-motion`), strona pokazuje statyczną klatkę finałową z tekstami i przycisk „Włącz animację”. Przycisk prowadzi do adresu z `?motion=on`, który wymusza animację.
