@@ -1,0 +1,15 @@
+{
+  "duration": 30.042,
+  "variants": {
+    "desktop": {
+      "count": 180,
+      "width": 1920,
+      "height": 1080
+    },
+    "mobile": {
+      "count": 120,
+      "width": 1080,
+      "height": 608
+    }
+  }
+}
