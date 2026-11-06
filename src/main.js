@@ -36,7 +36,10 @@ function hideLoader() {
 }
 
 function setupSmoothScroll() {
-  const lenis = new Lenis();
+  // Tu trafiamy tylko z włączoną animacją, także po „Włącz animację” przy wyłączonych
+  // animacjach w systemie. Lenis czytałby to ustawienie sam i po cichu zrezygnował
+  // z wygładzania: każdy ząbek kółka to byłby szarpnięty zryw zamiast płynnego ruchu.
+  const lenis = new Lenis({ respectReducedMotion: false });
   lenis.on('scroll', ScrollTrigger.update);
   gsap.ticker.add((time) => lenis.raf(time * 1000));
   gsap.ticker.lagSmoothing(0);
